@@ -37,6 +37,7 @@ main()
     if (rc)
         die("jwt_add_grant iat", rc);
 
+    //encode exp
     rc = jwt_add_grant_int(mytoken, "exp", now + 3600 * 24);
     if (rc)
         die("jwt_add_grant exp", rc);

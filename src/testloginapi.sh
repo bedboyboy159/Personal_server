@@ -1,6 +1,6 @@
 
 # change this number as per instruction to avoid conflicts.
-PORT=10000
+PORT=10897
 
 # to test against a working implementation (and see the intended responses)
 # change this variable, e.g.

@@ -39,13 +39,14 @@ struct http_transaction {
     size_t req_path;        // expressed as offset into the client's bufio.
     size_t req_body;        // ditto
     int req_content_len;    // content length of request body
+    char* token;           
 
 
     /* response related fields */
     enum http_response_status resp_status;
     buffer_t resp_headers;
     buffer_t resp_body;
-
+    bool verify;
     struct http_client *client;
 };
 
@@ -54,7 +55,7 @@ struct http_client {
 };
 
 void http_setup_client(struct http_client *, struct bufio *bufio);
-bool http_handle_transaction(struct http_client *);
+bool http_handle_transaction(struct http_client *, bool temp);
 void http_add_header(buffer_t * resp, char* key, char* fmt, ...);
 
 #endif /* _HTTP_H */

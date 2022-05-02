@@ -15,6 +15,7 @@
 #include "socket.h"
 #include "bufio.h"
 #include "main.h"
+#include <pthread.h>
 
 /* Implement HTML5 fallback.
  * If HTML5 fallback is implemented and activated, the server should
@@ -34,6 +35,20 @@ int token_expiration_time = 24 * 60 * 60;
 // root from which static files are served
 char * server_root;
 
+static void * client_thread(void * args) {
+    int *client_socket = args;
+    struct http_client client;
+    http_setup_client(&client, bufio_create(*client_socket));
+    while(1){
+        if(!http_handle_transaction(&client, html5_fallback)){
+            break;
+        }
+    }
+    bufio_close(client.bufio);
+    free(client_socket);
+    return EXIT_SUCCESS;
+}
+
 /*
  * A non-concurrent, iterative server that serves one client at a time.
  * For each client, it handles exactly 1 HTTP transaction.
@@ -48,10 +63,12 @@ server_loop(char *port_string)
         if (client_socket == -1)
             return;
 
-        struct http_client client;
-        http_setup_client(&client, bufio_create(client_socket));
-        http_handle_transaction(&client);
-        bufio_close(client.bufio);
+        int *socket = malloc(sizeof(int));
+        *socket = client_socket;
+
+        pthread_t pid;
+        pthread_create(&pid, NULL, client_thread, socket);
+        pthread_detach(pid);
     }
 }
 
