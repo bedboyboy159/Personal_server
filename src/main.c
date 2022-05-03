@@ -40,7 +40,7 @@ static void * client_thread(void * args) {
     struct http_client client;
     http_setup_client(&client, bufio_create(*client_socket));
     while(1){
-        if(!http_handle_transaction(&client, html5_fallback)){
+        if(!http_handle_transaction(&client, html5_fallback, token_expiration_time)){
             break;
         }
     }

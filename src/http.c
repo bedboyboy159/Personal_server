@@ -21,6 +21,7 @@
 #include <linux/limits.h>
 #include <jwt.h>
 #include <jansson.h>
+#include <dirent.h>
 
 #include "http.h"
 #include "hexdump.h"
@@ -37,7 +38,6 @@
 
 static const char * NEVER_EMBED_A_SECRET_IN_CODE = "supa secret";
 static bool user_authenticate(struct http_transaction* ta);
-void cstringcpy(char *src, char * dest);
 
 /* Parse HTTP request line, setting req_method, req_path, and req_version. */
 static bool
@@ -124,16 +124,25 @@ http_process_headers(struct http_transaction *ta)
         }
         
         if (!strcasecmp(field_name, "Cookie")){
-            char* token = strtok(field_value, ";");
+            char* rest;
+            char* token = strtok_r(field_value, ";", &rest);
             while(token != NULL){
                 if(strstr(token, "auth_token")){
                     break;
                 }       
-                token = strtok(NULL, ";");
+                token = strtok_r(NULL, ";", &rest);
             }
-            token = strtok(token, "=");
-            token = strtok(NULL, "=");
-            ta->token = token;
+            strtok_r(token, "=", &rest);
+            ta->token = rest;
+            ta->authenticate = true;
+        }
+
+        if (!strcasecmp(field_name, "Connection"))
+        {
+            if (strcmp(field_value, "close") == 0)
+                ta->verify = true;
+            else
+                ta->verify = false;
         }
         /* Handle other headers here. Both field_value and field_name
          * are zero-terminated strings.
@@ -336,6 +345,8 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
             return send_not_found(ta);
     }
 
+    if (!strcmp(req_path, "/"))
+        snprintf(fname, sizeof fname, "%s%s", basedir, "/index.html");
     
     // Determine file size
     struct stat st;
@@ -372,22 +383,28 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
 
 
 static bool
-handle_api(struct http_transaction *ta)
+handle_api(struct http_transaction *ta, int expired)
 {
     char *req_path = bufio_offset2ptr(ta->client->bufio, ta->req_path);
     ta->resp_status = HTTP_OK;
     // printf(" req_path: %s \n", req_path);
     if(ta->req_method == HTTP_POST && strcmp(req_path, "/api/login") == 0){
-        char* token = strtok(body, "{}");
-        token = strtok(token, "\"\"");
-        token = strtok(NULL, "");
-        token = strtok(token, ":\"");
-        char* username = token;
-        token = strtok(NULL, "");
-        token = strtok(token, ",\"");
-        token = strtok(NULL, "");
-        token = strtok(token, ":\"");
-        char* password = token;
+        json_t *root;
+        json_error_t error;
+
+        char* body = bufio_offset2ptr(ta->client->bufio, ta->req_body);
+
+        root = json_loadb(body, ta->req_body, JSON_DISABLE_EOF_CHECK, &error);
+        json_t* json_username = json_object_get(root, "username");
+        if(json_username == NULL){
+            return send_error(ta,HTTP_PERMISSION_DENIED, "TEST");
+        }
+        json_t* json_password = json_object_get(root, "password");
+        if(json_password == NULL){
+            return send_error(ta,HTTP_PERMISSION_DENIED, "TEST");
+        }
+        const char* username = json_string_value(json_username);
+        const char* password = json_string_value(json_password);
 
         if(strcmp(password, "thepassword") == 0 && strcmp(username, "user0") == 0){
             
@@ -401,7 +418,7 @@ handle_api(struct http_transaction *ta)
             time_t now = time(NULL);
             jwt_add_grant_int(mytoken, "iat", now);
             //add exp to token
-            jwt_add_grant_int(mytoken, "exp", now + 3600 * 24);
+            jwt_add_grant_int(mytoken, "exp", now + expired);
 
             jwt_set_alg(mytoken, JWT_ALG_HS256, 
             (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE, 
@@ -413,44 +430,71 @@ handle_api(struct http_transaction *ta)
             char *grants = jwt_get_grants_json(mytoken, NULL);
             
             buffer_appends(&ta->resp_body, grants);
-            http_add_header(&ta->resp_headers, "Set-Cookie", "auth_token=%s; Path=/", encoded);      
+            http_add_header(&ta->resp_headers, "Set-Cookie", "auth_token=%s; Path=/", encoded);
+            http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
+            return send_response(ta);
 
         }
         else{
-            // ta->resp_status = HTTP_PERMISSION_DENIED;
             return send_error(ta,HTTP_PERMISSION_DENIED, "TEST");
         }
+    }else if(ta->req_method == HTTP_GET && strcmp(req_path, "/api/login") == 0){
+        ta->resp_status = HTTP_OK;
+        
+        if(ta->authenticate == false){
+            buffer_appends(&ta->resp_body, "{}");
+            http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
+        }
+        else{
+                jwt_t *ymtoken;
+                jwt_decode(&ymtoken, ta->token,
+                    (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE, 
+                    strlen(NEVER_EMBED_A_SECRET_IN_CODE));
+                char *grants = jwt_get_grants_json(ymtoken, NULL);
+                long exp = jwt_get_grant_int(ymtoken, "exp");
+                time_t now = time(NULL);
+                if(now - exp > 0){
+                    buffer_appends(&ta->resp_body, "{}");
+                }
+                else{
+                    buffer_appends(&ta->resp_body, grants);
+                } 
+                http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
+                return send_response(ta);
+        }
+
     }
     return send_response(ta);
 }
 static bool user_authenticate(struct http_transaction* ta){
+    if(ta->authenticate){
     jwt_t *ymtoken;
-    jwt_decode(&ymtoken, ta->token,
-        (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE, 
-        strlen(NEVER_EMBED_A_SECRET_IN_CODE));
-    // char *grants = jwt_get_grants_json(ymtoken, NULL);
+        int rc = jwt_decode(&ymtoken, ta->token,
+            (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE, 
+            strlen(NEVER_EMBED_A_SECRET_IN_CODE));
+        // char *grants = jwt_get_grants_json(ymtoken, NULL);
+        if (rc){
+            return false;
+        }
+            
+        time_t exp;
+        const char * sub; 
+        exp = jwt_get_grant_int(ymtoken, "exp");
+        sub = jwt_get_grant(ymtoken, "sub");
 
-    time_t exp;
-    const char * sub; 
-    exp = jwt_get_grant_int(ymtoken, "exp");
-    sub = jwt_get_grant(ymtoken, "sub");
-
-    time_t now = time(NULL); 
-    if(now - exp > 0 || strcmp(sub, "user0") != 0){ // expired
-        // buffer_appends(&ta->resp_body, "{}");
+        time_t now = time(NULL); 
+        if(now - exp > 0 || strcmp(sub, "user0") != 0){ // expired
+            // buffer_appends(&ta->resp_body, "{}");
+            return false;
+        }else{
+            // buffer_appends(&ta->resp_body, grants);
+            return true;
+        }
+    }
+    else{
         return false;
-    }else{
-        // buffer_appends(&ta->resp_body, grants);
-        return true;
     }
-}
-
-void cstringcpy(char *src, char * dest)
-{
-    while (*src) {
-        *(dest++) = *(src++);
-    }
-    *dest = '\0';
+    
 }
 
 //handle static asset
@@ -466,7 +510,7 @@ http_setup_client(struct http_client *self, struct bufio *bufio)
 
 /* Handle a single HTTP transaction.  Returns true on success. */
 bool
-http_handle_transaction(struct http_client *self, bool temp)
+http_handle_transaction(struct http_client *self, bool temp, int expired)
 {
     struct http_transaction ta;
     memset(&ta, 0, sizeof ta);
@@ -496,17 +540,15 @@ http_handle_transaction(struct http_client *self, bool temp)
     bool rc = false;
     char *req_path = bufio_offset2ptr(ta.client->bufio, ta.req_path);
     if (STARTS_WITH(req_path, "/api")) {
-        rc = handle_api(&ta);
+        rc = handle_api(&ta, expired);
         
     } else if (STARTS_WITH(req_path, "/private")) {
-        if(ta.token != NULL){
             if(user_authenticate(&ta)){
                 rc = handle_static_asset(&ta, server_root);
             }
             else {
                 return send_error(&ta, HTTP_PERMISSION_DENIED, "Permission denied.");
             }
-        }
     }else if(temp == false && STARTS_WITH(req_path, "/public")){
        return send_error(&ta, HTTP_NOT_FOUND, "NOT FOUND");
     } else {
@@ -515,6 +557,17 @@ http_handle_transaction(struct http_client *self, bool temp)
     buffer_delete(&ta.resp_headers);
     buffer_delete(&ta.resp_body);
 
+    if(ta.req_version == HTTP_1_0){
+        return false;
+    }
+    else if(ta.req_version == HTTP_1_1){
+        if(ta.verify == true){
+            return false;
+        }
+        else{
+            return true;
+        }
+    }
 
     return rc;
 }
