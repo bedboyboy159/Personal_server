@@ -137,6 +137,13 @@ http_process_headers(struct http_transaction *ta)
             ta->authenticate = true;
         }
 
+        // if (!strcasecmp(field_name, "Connection"))
+        // {
+        //     if (strcmp(field_value, "close") == 0)
+        //         ta->verify = true;
+        //     else
+        //         ta->verify = false;
+        // }
         /* Handle other headers here. Both field_value and field_name
          * are zero-terminated strings.
          */
@@ -457,6 +464,36 @@ handle_api(struct http_transaction *ta, int expired)
         }
 
     }
+    // else if(ta->req_method == HTTP_GET && strcmp(req_path, "/api/video") == 0){
+    //     DIR* dir;
+    //     struct dirent* file;
+    //     char fileName[255];
+    //     dir = opendir(server_root);
+    //     json_t* vids = json_array();
+
+    //     while ((file = readdir(dir)) != NULL){
+    //         char* mp4 = strrchr(file->d_name, '.');
+    //         if(strcmp(mp4, ".mp4") == 0){
+    //             snprintf(fileName, sizeof(fileName), "%s/%s", server_root, file->d_name);
+    //             struct stat val;
+    //             stat(fileName, &val);
+    //             json_t* vid_object = json_object();
+    //             int size = json_object_set_new(vid_object, "size", json_integer(val.st_size));
+    //             int name = json_object_set_new(vid_object, "name", json_string(file->d_name));
+
+    //         }
+
+    //         closedir(dir);
+    //     }
+    // }
+    else if(ta->req_method != HTTP_GET && ta->req_method != HTTP_POST && strcmp(req_path, "/api/login") == 0){
+        return send_error(ta,HTTP_METHOD_NOT_ALLOWED, "TEST");
+    }
+    else{
+        ta->resp_status = HTTP_NOT_FOUND;
+        http_add_header(&ta->resp_headers, "Content-Type", "%s", "application/json");
+        return send_response(ta);
+    }
     return send_response(ta);
 }
 
@@ -506,12 +543,6 @@ http_handle_transaction(struct http_client *self, bool temp, int expired)
         rc = handle_api(&ta, expired);
         
     } else if (STARTS_WITH(req_path, "/private")) {
-            if(user_authenticate(&ta)){
-                rc = handle_static_asset(&ta, server_root);
-            }
-            else {
-                return send_error(&ta, HTTP_PERMISSION_DENIED, "Permission denied.");
-            }
     }else if(temp == false && STARTS_WITH(req_path, "/public")){
        return send_error(&ta, HTTP_NOT_FOUND, "NOT FOUND");
     } else {
