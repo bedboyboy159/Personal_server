@@ -1,6 +1,6 @@
 
 # change this number as per instruction to avoid conflicts.
-PORT=10000
+PORT=13085
 
 # to test against a working implementation (and see the intended responses)
 # change this variable, e.g.
@@ -28,14 +28,14 @@ curl -v \
     -b ${COOKIEJAR} \
     ${URL}/api/login
 
-# create a 'private' folder first for your server, and
-# put a file `secret.txt` in it.
-# this should fail since credentials were not presented in the request
+# # create a 'private' folder first for your server, and
+# # put a file `secret.txt` in it.
+# # this should fail since credentials were not presented in the request
 curl -v \
     ${URL}/private/secret.txt
 
-# this should succeed since credentials are included
-curl -v \
-    -b ${COOKIEJAR} \
-    ${URL}/private/secret.txt
+# # this should succeed since credentials are included
+# curl -v \
+#     -b ${COOKIEJAR} \
+#     ${URL}/private/secret.txt
 

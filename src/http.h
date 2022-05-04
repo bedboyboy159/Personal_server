@@ -47,6 +47,8 @@ struct http_transaction {
     buffer_t resp_body;
 
     struct http_client *client;
+
+    char cookie[300];
 };
 
 struct http_client {

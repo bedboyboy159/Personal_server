@@ -20,11 +20,17 @@
 #include <fcntl.h>
 #include <linux/limits.h>
 
+#include <jwt.h>
+
 #include "http.h"
 #include "hexdump.h"
 #include "socket.h"
 #include "bufio.h"
 #include "main.h"
+
+#include <jansson.h>
+
+static const char *NEVER_EMBED_A_SECRET_IN_CODE = "supa secret";
 
 // Need macros here because of the sizeof
 #define CRLF "\r\n"
@@ -38,11 +44,11 @@ http_parse_request(struct http_transaction *ta)
 {
     size_t req_offset;
     ssize_t len = bufio_readline(ta->client->bufio, &req_offset);
-    if (len < 2)       // error, EOF, or less than 2 characters
+    if (len < 2) // error, EOF, or less than 2 characters
         return false;
 
     char *request = bufio_offset2ptr(ta->client->bufio, req_offset);
-    request[len-2] = '\0';  // replace LF with 0 to ensure zero-termination
+    request[len - 2] = '\0'; // replace LF with 0 to ensure zero-termination
     char *endptr;
     char *method = strtok_r(request, " ", &endptr);
     if (method == NULL)
@@ -62,7 +68,7 @@ http_parse_request(struct http_transaction *ta)
     ta->req_path = bufio_ptr2offset(ta->client->bufio, req_path);
 
     char *http_version = strtok_r(NULL, CR, &endptr);
-    if (http_version == NULL)  // would be HTTP 0.9
+    if (http_version == NULL) // would be HTTP 0.9
         return false;
 
     // record client's HTTP version in request
@@ -80,20 +86,20 @@ http_parse_request(struct http_transaction *ta)
 static bool
 http_process_headers(struct http_transaction *ta)
 {
-    for (;;) {
+    for (;;)
+    {
         size_t header_offset;
         ssize_t len = bufio_readline(ta->client->bufio, &header_offset);
         if (len <= 0)
             return false;
-
         char *header = bufio_offset2ptr(ta->client->bufio, header_offset);
-        if (len == 2 && STARTS_WITH(header, CRLF))       // empty CRLF
+        if (len == 2 && STARTS_WITH(header, CRLF)) // empty CRLF
             return true;
 
-        header[len-2] = '\0';
-        /* Each header field consists of a name followed by a 
-         * colon (":") and the field value. Field names are 
-         * case-insensitive. The field value MAY be preceded by 
+        header[len - 2] = '\0';
+        /* Each header field consists of a name followed by a
+         * colon (":") and the field value. Field names are
+         * case-insensitive. The field value MAY be preceded by
          * any amount of LWS, though a single SP is preferred.
          */
         char *endptr;
@@ -108,10 +114,22 @@ http_process_headers(struct http_transaction *ta)
 
         // you may print the header like so
         // printf("Header: %s: %s\n", field_name, field_value);
-        if (!strcasecmp(field_name, "Content-Length")) {
+        if (!strcasecmp(field_name, "Content-Length"))
+        {
             ta->req_content_len = atoi(field_value);
         }
 
+        if (!strcasecmp(field_name, "Cookie"))
+        {
+
+            char *rhs;
+            char *lhs = strtok_r(field_value, "=", &rhs);
+            if (strcmp(lhs, "auth_token") == 0)
+            {
+                snprintf(ta->cookie, 300, "%s", rhs);
+            }
+            printf("%s\n", ta->cookie);
+        }
         /* Handle other headers here. Both field_value and field_name
          * are zero-terminated strings.
          */
@@ -121,8 +139,7 @@ http_process_headers(struct http_transaction *ta)
 const int MAX_HEADER_LEN = 2048;
 
 /* add a formatted header to the response buffer. */
-void 
-http_add_header(buffer_t * resp, char* key, char* fmt, ...)
+void http_add_header(buffer_t *resp, char *key, char *fmt, ...)
 {
     va_list ap;
 
@@ -145,14 +162,15 @@ add_content_length(buffer_t *res, size_t len)
     http_add_header(res, "Content-Length", "%ld", len);
 }
 
-/* start the response by writing the first line of the response 
+/* start the response by writing the first line of the response
  * to the response buffer.  Used in send_response_header */
 static void
-start_response(struct http_transaction * ta, buffer_t *res)
+start_response(struct http_transaction *ta, buffer_t *res)
 {
     buffer_appends(res, "HTTP/1.0 ");
 
-    switch (ta->resp_status) {
+    switch (ta->resp_status)
+    {
     case HTTP_OK:
         buffer_appends(res, "200 OK");
         break;
@@ -227,7 +245,7 @@ const int MAX_ERROR_LEN = 2048;
 
 /* Send an error response. */
 static bool
-send_error(struct http_transaction * ta, enum http_response_status status, const char *fmt, ...)
+send_error(struct http_transaction *ta, enum http_response_status status, const char *fmt, ...)
 {
     va_list ap;
 
@@ -241,15 +259,21 @@ send_error(struct http_transaction * ta, enum http_response_status status, const
     return send_response(ta);
 }
 
+static bool
+die(const char *msg, int error, struct http_transaction *ta)
+{
+    return send_error(ta, HTTP_BAD_REQUEST, "Death: %s", msg);
+}
+
 /* Send Not Found response. */
 static bool
 send_not_found(struct http_transaction *ta)
 {
-    return send_error(ta, HTTP_NOT_FOUND, "File %s not found", 
-        bufio_offset2ptr(ta->client->bufio, ta->req_path));
+    return send_error(ta, HTTP_NOT_FOUND, "File %s not found",
+                      bufio_offset2ptr(ta->client->bufio, ta->req_path));
 }
 
-/* A start at assigning an appropriate mime type.  Real-world 
+/* A start at assigning an appropriate mime type.  Real-world
  * servers use more extensive lists such as /etc/mime.types
  */
 static const char *
@@ -288,7 +312,8 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     // which?  Fix it to avoid indirect object reference (IDOR) attacks.
     snprintf(fname, sizeof fname, "%s%s", basedir, req_path);
 
-    if (access(fname, R_OK)) {
+    if (access(fname, R_OK))
+    {
         if (errno == EACCES)
             return send_error(ta, HTTP_PERMISSION_DENIED, "Permission denied.");
         else
@@ -302,7 +327,8 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
         return send_error(ta, HTTP_INTERNAL_ERROR, "Could not stat file.");
 
     int filefd = open(fname, O_RDONLY);
-    if (filefd == -1) {
+    if (filefd == -1)
+    {
         return send_not_found(ta);
     }
 
@@ -326,25 +352,139 @@ out:
     return success;
 }
 
-static bool
-handle_api(struct http_transaction *ta)
+static bool handle_api_video(struct http_transaction *ta)
 {
-    return send_error(ta, HTTP_NOT_FOUND, "API not implemented");
+    return false;
+}
+
+static bool handle_private(struct http_transaction *ta)
+{
+    if (strlen(ta->cookie) != 0)
+    {
+        // authenticate
+    }
+    else
+    {
+        ta->resp_status = HTTP_PERMISSION_DENIED;
+        send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
+        return send_response(ta);
+    }
+    return false;
+}
+
+static bool
+handle_api_login(struct http_transaction *ta)
+{
+    // check for POST or GET
+    if (ta->req_method == HTTP_GET)
+    {
+        if (strlen(ta->cookie) != 0)
+        {
+            jwt_t *ymtoken;
+            int rc = jwt_decode(&ymtoken, ta->cookie,
+                                (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE,
+                                strlen(NEVER_EMBED_A_SECRET_IN_CODE));
+            if (rc)
+                return die("jwt_decode", rc, ta);
+
+            char *grants = jwt_get_grants_json(ymtoken, NULL); // NULL means all
+            if (grants == NULL)
+                return die("jwt_get_grants_json", ENOMEM, ta);
+
+            // json_t *root = json_loadb(grants, strlen(grants), JSON_ENCODE_ANY, NULL);
+
+            buffer_append(&ta->resp_body, grants, strlen(grants));
+            free(grants);
+            ta->resp_status = HTTP_OK;
+            return send_response(ta);
+        }
+        else
+        {
+            buffer_append(&ta->resp_body, "{}", 2);
+            ta->resp_status = HTTP_OK;
+            return send_response(ta);
+        }
+    }
+    else if (ta->req_method == HTTP_POST)
+    {
+        // check if /api/login (assume that this is there for now) & CHECK FOR JSON
+        if (ta->req_content_len > 0)
+        {
+            char *body = bufio_offset2ptr(ta->client->bufio, ta->req_body);
+            // check if json username and password match
+            json_error_t err;
+            json_t *res = json_loadb(body, (size_t)ta->req_content_len, JSON_ENCODE_ANY, &err);
+
+            json_t *username_input = json_object_get(res, "username");
+            json_t *password_input = json_object_get(res, "password");
+
+            const char *u_in_str = json_string_value(username_input);
+            const char *p_in_str = json_string_value(password_input);
+
+            if (strcmp(u_in_str, "user0") == 0 || strcmp(p_in_str, "thepasword") == 0)
+            {
+                ta->resp_status = HTTP_OK;
+                // WHEN AUTH IS CORRECT
+                // MAKE JWT AND SEND IT BACK
+                jwt_t *mytoken;
+                int rc = jwt_new(&mytoken);
+                if (rc)
+                    return die("jwt_new", rc, ta);
+
+                rc = jwt_add_grant(mytoken, "sub", "user0");
+                if (rc)
+                    return die("jwt_add_grant sub", rc, ta);
+
+                time_t now = time(NULL);
+                rc = jwt_add_grant_int(mytoken, "iat", now);
+                if (rc)
+                    return die("jwt_add_grant iat", rc, ta);
+
+                rc = jwt_add_grant_int(mytoken, "exp", now + 3600 * 24);
+                if (rc)
+                    return die("jwt_add_grant exp", rc, ta);
+
+                rc = jwt_set_alg(mytoken, JWT_ALG_HS256,
+                                 (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE,
+                                 strlen(NEVER_EMBED_A_SECRET_IN_CODE));
+                if (rc)
+                    return die("jwt_set_alg", rc, ta);
+
+                char *encoded = jwt_encode_str(mytoken);
+                char *grants = jwt_get_grants_json(mytoken, NULL); // NULL means all
+                if (grants == NULL)
+                    return die("jwt_get_grants_json", ENOMEM, ta);
+                // set cookie here
+                http_add_header(&ta->resp_headers, "Set-Cookie", "auth_token=%s; Path=/", encoded);
+                buffer_append(&ta->resp_body, grants, strlen(grants));
+                free(grants);
+                free(encoded);
+                return send_response(ta);
+            }
+            else
+            {
+                return send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
+            }
+        }
+        return send_error(ta, HTTP_PERMISSION_DENIED, "NO CREDENTIALS TYPED");
+    }
+    return send_error(ta, HTTP_PERMISSION_DENIED, "EDGE CASE NOT ACCOUNTED FOR");
 }
 
 /* Set up an http client, associating it with a bufio buffer. */
-void 
-http_setup_client(struct http_client *self, struct bufio *bufio)
+void http_setup_client(struct http_client *self, struct bufio *bufio)
 {
     self->bufio = bufio;
 }
 
 /* Handle a single HTTP transaction.  Returns true on success. */
-bool
-http_handle_transaction(struct http_client *self)
+bool http_handle_transaction(struct http_client *self)
 {
     struct http_transaction ta;
     memset(&ta, 0, sizeof ta);
+
+    memset(&ta.cookie, 0, 300);
+
     ta.client = self;
 
     if (!http_parse_request(&ta))
@@ -353,11 +493,11 @@ http_handle_transaction(struct http_client *self)
     if (!http_process_headers(&ta))
         return false;
 
-    if (ta.req_content_len > 0) {
+    if (ta.req_content_len > 0)
+    {
         int rc = bufio_read(self->bufio, ta.req_content_len, &ta.req_body);
         if (rc != ta.req_content_len)
             return false;
-
         // To see the body, use this:
         // char *body = bufio_offset2ptr(ta.client->bufio, ta.req_body);
         // hexdump(body, ta.req_content_len);
@@ -369,12 +509,23 @@ http_handle_transaction(struct http_client *self)
 
     bool rc = false;
     char *req_path = bufio_offset2ptr(ta.client->bufio, ta.req_path);
-    if (STARTS_WITH(req_path, "/api")) {
-        rc = handle_api(&ta);
-    } else
-    if (STARTS_WITH(req_path, "/private")) {
-        /* not implemented */
-    } else {
+    // this should be /api
+    if (STARTS_WITH(req_path, "/api/login"))
+    {
+        rc = handle_api_login(&ta);
+    }
+    else if (STARTS_WITH(req_path, "/api/video"))
+    {
+        // not implemented
+        rc = handle_api_video(&ta);
+    }
+    else if (STARTS_WITH(req_path, "/private"))
+    {
+        // not implemented
+        rc = handle_private(&ta);
+    }
+    else
+    {
         rc = handle_static_asset(&ta, server_root);
     }
 
