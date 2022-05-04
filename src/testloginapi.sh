@@ -6,6 +6,7 @@ PORT=13085
 # change this variable, e.g.
 # use URL=http://theta.cs.vt.edu:3000/
 URL=http://localhost:${PORT}
+# URL=http://hazelnut.rlogin:12345
 
 # the file in which curl stores cookies across runs
 COOKIEJAR=cookies.txt
@@ -35,7 +36,7 @@ curl -v \
     ${URL}/private/secret.txt
 
 # # this should succeed since credentials are included
-# curl -v \
-#     -b ${COOKIEJAR} \
-#     ${URL}/private/secret.txt
+curl -v \
+    -b ${COOKIEJAR} \
+    ${URL}/private/secret.txt
 

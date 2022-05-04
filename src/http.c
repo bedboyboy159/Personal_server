@@ -376,8 +376,30 @@ static bool handle_private(struct http_transaction *ta)
         json_t *expiry_time = json_object_get(root, "exp");
         json_t *user_name = json_object_get(root, "sub");
 
-        if (strcmp(user_name, "user0") == 0)
+        const char *user_name_str = json_string_value(user_name);
+
+        if (strcmp(user_name_str, "user0") == 0)
         {
+            // authenticate if expiry_time has not passed
+            time_t now = time(NULL);
+            const int exp_int = json_integer_value(expiry_time);
+            if (exp_int > now)
+            {
+                // NOICE (AUTHENTICATE)
+                return handle_static_asset(ta, server_root);
+            }
+            else
+            {
+                ta->resp_status = HTTP_PERMISSION_DENIED;
+                send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
+                return send_response(ta);
+            }
+        }
+        else
+        {
+            ta->resp_status = HTTP_PERMISSION_DENIED;
+            send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
+            return send_response(ta);
         }
     }
     else
