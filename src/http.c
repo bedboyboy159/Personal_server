@@ -137,13 +137,13 @@ http_process_headers(struct http_transaction *ta)
             ta->authenticate = true;
         }
 
-        // if (!strcasecmp(field_name, "Connection"))
-        // {
-        //     if (strcmp(field_value, "close") == 0)
-        //         ta->verify = true;
-        //     else
-        //         ta->verify = false;
-        // }
+        if (!strcasecmp(field_name, "Connection"))
+        {
+            if (strcmp(field_value, "close") == 0)
+                ta->verify = true;
+            else
+                ta->verify = false;
+        }
         /* Handle other headers here. Both field_value and field_name
          * are zero-terminated strings.
          */
@@ -496,6 +496,36 @@ handle_api(struct http_transaction *ta, int expired)
     }
     return send_response(ta);
 }
+static bool user_authenticate(struct http_transaction* ta){
+    if(ta->authenticate){
+    jwt_t *ymtoken;
+        int rc = jwt_decode(&ymtoken, ta->token,
+            (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE, 
+            strlen(NEVER_EMBED_A_SECRET_IN_CODE));
+        // char *grants = jwt_get_grants_json(ymtoken, NULL);
+        if (rc){
+            return false;
+        }
+            
+        time_t exp;
+        const char * sub; 
+        exp = jwt_get_grant_int(ymtoken, "exp");
+        sub = jwt_get_grant(ymtoken, "sub");
+
+        time_t now = time(NULL); 
+        if(now - exp > 0 || strcmp(sub, "user0") != 0){ // expired
+            // buffer_appends(&ta->resp_body, "{}");
+            return false;
+        }else{
+            // buffer_appends(&ta->resp_body, grants);
+            return true;
+        }
+    }
+    else{
+        return false;
+    }
+    
+}
 
 //handle static asset
 // only done when user is authenticated
@@ -543,6 +573,12 @@ http_handle_transaction(struct http_client *self, bool temp, int expired)
         rc = handle_api(&ta, expired);
         
     } else if (STARTS_WITH(req_path, "/private")) {
+            if(user_authenticate(&ta)){
+                rc = handle_static_asset(&ta, server_root);
+            }
+            else {
+                return send_error(&ta, HTTP_PERMISSION_DENIED, "Permission denied.");
+            }
     }else if(temp == false && STARTS_WITH(req_path, "/public")){
        return send_error(&ta, HTTP_NOT_FOUND, "NOT FOUND");
     } else {
