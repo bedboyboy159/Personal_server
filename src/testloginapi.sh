@@ -28,9 +28,9 @@ curl -v \
     -b ${COOKIEJAR} \
     ${URL}/api/login
 
-# # create a 'private' folder first for your server, and
-# # put a file `secret.txt` in it.
-# # this should fail since credentials were not presented in the request
+# create a 'private' folder first for your server, and
+# put a file `secret.txt` in it.
+# this should fail since credentials were not presented in the request
 curl -v \
     ${URL}/private/secret.txt
 

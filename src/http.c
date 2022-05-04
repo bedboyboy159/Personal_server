@@ -78,7 +78,6 @@ http_parse_request(struct http_transaction *ta)
         ta->req_version = HTTP_1_0;
     else
         return false;
-
     return true;
 }
 
@@ -128,7 +127,6 @@ http_process_headers(struct http_transaction *ta)
             {
                 snprintf(ta->cookie, 300, "%s", rhs);
             }
-            printf("%s\n", ta->cookie);
         }
         /* Handle other headers here. Both field_value and field_name
          * are zero-terminated strings.
@@ -362,6 +360,25 @@ static bool handle_private(struct http_transaction *ta)
     if (strlen(ta->cookie) != 0)
     {
         // authenticate
+        jwt_t *ymtoken;
+        int rc = jwt_decode(&ymtoken, ta->cookie,
+                            (unsigned char *)NEVER_EMBED_A_SECRET_IN_CODE,
+                            strlen(NEVER_EMBED_A_SECRET_IN_CODE));
+        if (rc)
+            return die("jwt_decode", rc, ta);
+
+        char *grants = jwt_get_grants_json(ymtoken, NULL); // NULL means all
+        if (grants == NULL)
+            return die("jwt_get_grants_json", ENOMEM, ta);
+
+        json_t *root = json_loadb(grants, strlen(grants), 0, NULL);
+
+        json_t *expiry_time = json_object_get(root, "exp");
+        json_t *user_name = json_object_get(root, "sub");
+
+        if (strcmp(user_name, "user0") == 0)
+        {
+        }
     }
     else
     {
@@ -369,7 +386,6 @@ static bool handle_private(struct http_transaction *ta)
         send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
         return send_response(ta);
     }
-    return false;
 }
 
 static bool
