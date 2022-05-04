@@ -17,10 +17,11 @@ COOKIEJAR=cookies.txt
 
 # test authentication
 # this should result in a cookie being issued that embeds the JWT token
+ #  -d '{'foo': 'bar'}' \
 curl -v -H "Content-Type: application/json" \
      -c ${COOKIEJAR} \
      -X POST \
-     -d '{"username":"user0","password":"thepassword"}' \
+    -d '{"username":"user0","password":"thepassword"}' \
     ${URL}/api/login
 
 # this should succeed if the password was correct

@@ -310,6 +310,12 @@ guess_mime_type(char *filename)
 static bool
 handle_static_asset(struct http_transaction *ta, char *basedir)
 {
+    // check if header has range
+    // use range to send file
+
+    // when it comes to mp4
+    // same as index.html
+
     char fname[PATH_MAX];
 
     char *req_path = bufio_offset2ptr(ta->client->bufio, ta->req_path);
@@ -359,7 +365,7 @@ out:
 
 static bool handle_api_video(struct http_transaction *ta)
 {
-    return false;
+    return handle_static_asset(ta, server_root);
 }
 
 static bool handle_private(struct http_transaction *ta)
@@ -384,26 +390,17 @@ static bool handle_private(struct http_transaction *ta)
         json_t *user_name = json_object_get(root, "sub");
 
         const char *user_name_str = json_string_value(user_name);
+        int exp_int = json_integer_value(expiry_time);
+        time_t now = time(NULL);
+        int now_int = (int)now;
 
-        if (strcmp(user_name_str, "user0") == 0)
+        if (strcmp(user_name_str, "user0") == 0 && (exp_int > now_int))
         {
-            // authenticate if expiry_time has not passed
-            time_t now = time(NULL);
-            const int exp_int = json_integer_value(expiry_time);
-            if (exp_int > now)
-            {
-                // NOICE (AUTHENTICATE)
-                return handle_static_asset(ta, server_root);
-            }
-            else
-            {
-                // ta->resp_status = HTTP_PERMISSION_DENIED;
-                return send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
-            }
+            return handle_static_asset(ta, server_root);
         }
         else
         {
-            return send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
+            return send_error(ta, HTTP_PERMISSION_DENIED, "EXPIRED OR INCORRECT CRED");
         }
     }
     else
@@ -434,21 +431,20 @@ handle_api_login(struct http_transaction *ta)
             // json_t *root = json_loadb(grants, strlen(grants), JSON_ENCODE_ANY, NULL);
 
             buffer_append(&ta->resp_body, grants, strlen(grants));
-            free(grants);
+            // buffer_append(&ta->resp_headers, "Content-Type", "application/json");
+
             ta->resp_status = HTTP_OK;
             return send_response(ta);
         }
-        else
-        {
-            buffer_append(&ta->resp_body, "{}", 2);
-            ta->resp_status = HTTP_OK;
-            return send_response(ta);
-        }
+        buffer_append(&ta->resp_body, "{}", 2);
+        ta->resp_status = HTTP_OK;
+        return send_response(ta);
     }
     else if (ta->req_method == HTTP_POST)
     {
+        http_add_header(&ta->resp_headers, "Content-Type", "application/json");
         // check if /api/login (assume that this is there for now) & CHECK FOR JSON
-        if (ta->req_content_len > 0)
+        if (ta->req_content_len != 0)
         {
             char *body = bufio_offset2ptr(ta->client->bufio, ta->req_body);
             // check if json username and password match
@@ -458,12 +454,16 @@ handle_api_login(struct http_transaction *ta)
             json_t *username_input = json_object_get(res, "username");
             json_t *password_input = json_object_get(res, "password");
 
+            if (username_input == NULL || password_input == NULL)
+            {
+                return send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
+            }
+
             const char *u_in_str = json_string_value(username_input);
             const char *p_in_str = json_string_value(password_input);
 
             if (strcmp(u_in_str, "user0") == 0 && strcmp(p_in_str, "thepassword") == 0)
             {
-                ta->resp_status = HTTP_OK;
                 // WHEN AUTH IS CORRECT
                 // MAKE JWT AND SEND IT BACK
                 jwt_t *mytoken;
@@ -480,7 +480,10 @@ handle_api_login(struct http_transaction *ta)
                 if (rc)
                     return die("jwt_add_grant iat", rc, ta);
 
-                rc = jwt_add_grant_int(mytoken, "exp", now + 3600 * 24);
+                rc = jwt_add_grant_int(mytoken, "exp", now + token_expiration_time);
+                // rc = jwt_add_grant_int(mytoken, "exp", now - 5);
+                // always return expired token
+
                 if (rc)
                     return die("jwt_add_grant exp", rc, ta);
 
@@ -497,8 +500,7 @@ handle_api_login(struct http_transaction *ta)
                 // set cookie here
                 http_add_header(&ta->resp_headers, "Set-Cookie", "auth_token=%s; Path=/", encoded);
                 buffer_append(&ta->resp_body, grants, strlen(grants));
-                free(grants);
-                free(encoded);
+                ta->resp_status = HTTP_OK;
                 return send_response(ta);
             }
             else
@@ -571,6 +573,10 @@ struct rc_and_ver http_handle_transaction(struct http_client *self)
     }
     if (STARTS_WITH(req_path, "/api/login"))
     {
+        if (ta.req_method == HTTP_GET)
+        {
+            http_add_header(&ta.resp_headers, "Content-Type", "application/json");
+        }
         rc = handle_api_login(&ta);
     }
     else if (STARTS_WITH(req_path, "/api/video"))
@@ -581,6 +587,10 @@ struct rc_and_ver http_handle_transaction(struct http_client *self)
     else if (STARTS_WITH(req_path, "/private"))
     {
         // not implemented
+        if (ta.cookie == NULL)
+        {
+            rc = send_error(&ta, HTTP_PERMISSION_DENIED, "NULL COOKIE");
+        }
         rc = handle_private(&ta);
     }
     else
