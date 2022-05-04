@@ -37,26 +37,60 @@ int token_expiration_time = 24 * 60 * 60;
 // root from which static files are served
 char *server_root;
 
+static void *thread_routine(void *socket)
+{
+    struct http_client client;
+    http_setup_client(&client, bufio_create(*((int *)socket)));
+    struct rc_and_ver res = http_handle_transaction(&client);
+
+    while (res.rc && (res.http_ver == 1))
+    {
+        res = http_handle_transaction(&client);
+    };
+    bufio_close(client.bufio);
+    free(socket);
+    return NULL;
+}
+
 /*
  * A non-concurrent, iterative server that serves one client at a time.
  * For each client, it handles exactly 1 HTTP transaction.
  */
+// static void
+// server_loop(char *port_string)
+// {
+//     int accepting_socket = socket_open_bind_listen(port_string, 10000);
+//     while (accepting_socket != -1)
+//     {
+//         fprintf(stderr, "Waiting for client...\n");
+//         int client_socket = socket_accept_client(accepting_socket);
+//         if (client_socket == -1)
+//             return;
+
+//         struct http_client client;
+//         http_setup_client(&client, bufio_create(client_socket));
+//         http_handle_transaction(&client);
+//         bufio_close(client.bufio);
+//     }
+// }
 static void
-server_loop(char *port_string)
+server_loop(char *portString)
 {
-    int accepting_socket = socket_open_bind_listen(port_string, 10000);
-    while (accepting_socket != -1)
+    int *accepting_socket = malloc(sizeof(int));
+    *accepting_socket = socket_open_bind_listen(portString, 10000);
+    while (*accepting_socket != -1)
     {
         fprintf(stderr, "Waiting for client...\n");
-        int client_socket = socket_accept_client(accepting_socket);
-        if (client_socket == -1)
+        int *client_socket = malloc(sizeof(int));
+        *client_socket = socket_accept_client(*accepting_socket);
+        if (*client_socket == -1)
             return;
 
-        struct http_client client;
-        http_setup_client(&client, bufio_create(client_socket));
-        http_handle_transaction(&client);
-        bufio_close(client.bufio);
+        pthread_t t;
+        pthread_create(&t, NULL, thread_routine, (void *)client_socket);
+        pthread_detach(t);
     }
+    free(accepting_socket);
 }
 
 static void

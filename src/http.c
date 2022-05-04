@@ -165,7 +165,14 @@ add_content_length(buffer_t *res, size_t len)
 static void
 start_response(struct http_transaction *ta, buffer_t *res)
 {
-    buffer_appends(res, "HTTP/1.0 ");
+    if (ta->req_version == HTTP_1_0)
+    {
+        buffer_appends(res, "HTTP/1.0 ");
+    }
+    else
+    {
+        buffer_appends(res, "HTTP/1.1 ");
+    }
 
     switch (ta->resp_status)
     {
@@ -260,7 +267,7 @@ send_error(struct http_transaction *ta, enum http_response_status status, const 
 static bool
 die(const char *msg, int error, struct http_transaction *ta)
 {
-    return send_error(ta, HTTP_BAD_REQUEST, "Death: %s", msg);
+    return send_error(ta, HTTP_PERMISSION_DENIED, "Death: %s", msg);
 }
 
 /* Send Not Found response. */
@@ -390,23 +397,18 @@ static bool handle_private(struct http_transaction *ta)
             }
             else
             {
-                ta->resp_status = HTTP_PERMISSION_DENIED;
-                send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
-                return send_response(ta);
+                // ta->resp_status = HTTP_PERMISSION_DENIED;
+                return send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
             }
         }
         else
         {
-            ta->resp_status = HTTP_PERMISSION_DENIED;
-            send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
-            return send_response(ta);
+            return send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
         }
     }
     else
     {
-        ta->resp_status = HTTP_PERMISSION_DENIED;
-        send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
-        return send_response(ta);
+        return send_error(ta, HTTP_PERMISSION_DENIED, "INCORRECT CREDENTIALS");
     }
 }
 
@@ -459,7 +461,7 @@ handle_api_login(struct http_transaction *ta)
             const char *u_in_str = json_string_value(username_input);
             const char *p_in_str = json_string_value(password_input);
 
-            if (strcmp(u_in_str, "user0") == 0 || strcmp(p_in_str, "thepasword") == 0)
+            if (strcmp(u_in_str, "user0") == 0 && strcmp(p_in_str, "thepassword") == 0)
             {
                 ta->resp_status = HTTP_OK;
                 // WHEN AUTH IS CORRECT
@@ -516,7 +518,7 @@ void http_setup_client(struct http_client *self, struct bufio *bufio)
 }
 
 /* Handle a single HTTP transaction.  Returns true on success. */
-bool http_handle_transaction(struct http_client *self)
+struct rc_and_ver http_handle_transaction(struct http_client *self)
 {
     struct http_transaction ta;
     memset(&ta, 0, sizeof ta);
@@ -526,16 +528,31 @@ bool http_handle_transaction(struct http_client *self)
     ta.client = self;
 
     if (!http_parse_request(&ta))
-        return false;
+    {
+        struct rc_and_ver return_stuff;
+        return_stuff.http_ver = ta.req_version == HTTP_1_1 ? 1 : 0;
+        return_stuff.rc = false;
+        return return_stuff;
+    }
 
     if (!http_process_headers(&ta))
-        return false;
+    {
+        struct rc_and_ver return_stuff;
+        return_stuff.http_ver = ta.req_version == HTTP_1_1 ? 1 : 0;
+        return_stuff.rc = false;
+        return return_stuff;
+    }
 
     if (ta.req_content_len > 0)
     {
         int rc = bufio_read(self->bufio, ta.req_content_len, &ta.req_body);
         if (rc != ta.req_content_len)
-            return false;
+        {
+            struct rc_and_ver return_stuff;
+            return_stuff.http_ver = ta.req_version == HTTP_1_1 ? 1 : 0;
+            return_stuff.rc = false;
+            return return_stuff;
+        }
         // To see the body, use this:
         // char *body = bufio_offset2ptr(ta.client->bufio, ta.req_body);
         // hexdump(body, ta.req_content_len);
@@ -548,6 +565,10 @@ bool http_handle_transaction(struct http_client *self)
     bool rc = false;
     char *req_path = bufio_offset2ptr(ta.client->bufio, ta.req_path);
     // this should be /api
+    if (strstr(req_path, ".."))
+    {
+        rc = send_error(&ta, HTTP_NOT_FOUND, "Not found");
+    }
     if (STARTS_WITH(req_path, "/api/login"))
     {
         rc = handle_api_login(&ta);
@@ -567,8 +588,10 @@ bool http_handle_transaction(struct http_client *self)
         rc = handle_static_asset(&ta, server_root);
     }
 
+    struct rc_and_ver return_stuff;
+    return_stuff.http_ver = ta.req_version == HTTP_1_1 ? 1 : 0;
+    return_stuff.rc = rc;
     buffer_delete(&ta.resp_headers);
     buffer_delete(&ta.resp_body);
-
-    return rc;
+    return return_stuff;
 }
