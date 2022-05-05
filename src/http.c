@@ -1,3 +1,22 @@
+/**
+ * ALL THINGS IMPLEMENTED
+ *
+ * AUTHENTICATION:
+ * HTML 5 FALLBACK:
+ * STREAMING MP4:
+ * MULTITHREADING:
+ * IPV6:
+ *
+ * @file http.c
+ * @author your name (you@domain.com)
+ * @brief
+ * @version 0.1
+ * @date 2022-05-04
+ *
+ * @copyright Copyright (c) 2022
+ *
+ */
+
 /*
  * A partial implementation of HTTP/1.0
  *
@@ -118,9 +137,13 @@ http_process_headers(struct http_transaction *ta)
             ta->req_content_len = atoi(field_value);
         }
 
+        /* Handle other headers here. Both field_value and field_name
+         * are zero-terminated strings.
+         */
+
+        // sets cookie
         if (!strcasecmp(field_name, "Cookie"))
         {
-
             char *rhs;
             char *lhs = strtok_r(field_value, "=", &rhs);
             if (strcmp(lhs, "auth_token") == 0)
@@ -128,9 +151,6 @@ http_process_headers(struct http_transaction *ta)
                 snprintf(ta->cookie, 300, "%s", rhs);
             }
         }
-        /* Handle other headers here. Both field_value and field_name
-         * are zero-terminated strings.
-         */
     }
 }
 
@@ -274,6 +294,8 @@ die(const char *msg, int error, struct http_transaction *ta)
 static bool
 send_not_found(struct http_transaction *ta)
 {
+    // edit here and give back index.html
+
     return send_error(ta, HTTP_NOT_FOUND, "File %s not found",
                       bufio_offset2ptr(ta->client->bufio, ta->req_path));
 }
@@ -303,7 +325,17 @@ guess_mime_type(char *filename)
     if (!strcasecmp(suffix, ".js"))
         return "text/javascript";
 
+    if (!strcasecmp(suffix, ".mp4"))
+        return "video/mp4";
+
+    if (!strcasecmp(suffix, ".css"))
+        return "text/css";
+
+    if (!strcasecmp(suffix, ".svg"))
+        return "image/svg+xml";
+
     return "text/plain";
+    // apng
 }
 
 /* Handle HTTP transaction for static files. */
@@ -316,6 +348,8 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     // when it comes to mp4
     // same as index.html
 
+    // check range is in header
+
     char fname[PATH_MAX];
 
     char *req_path = bufio_offset2ptr(ta->client->bufio, ta->req_path);
@@ -327,9 +361,14 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     {
         if (errno == EACCES)
             return send_error(ta, HTTP_PERMISSION_DENIED, "Permission denied.");
+        else if (html5_fallback)
+            snprintf(fname, sizeof fname, "%s%s", basedir, "/index.html");
         else
             return send_not_found(ta);
     }
+
+    if (!strcmp(req_path, "/"))
+        snprintf(fname, sizeof fname, "%s%s", basedir, "/index.html");
 
     // Determine file size
     struct stat st;
@@ -365,7 +404,14 @@ out:
 
 static bool handle_api_video(struct http_transaction *ta)
 {
-    return handle_static_asset(ta, server_root);
+    // list out videos in json format
+    if (ta->req_method == HTTP_GET)
+    {
+
+        // return json object
+        // json object should be a list of videos that can be served
+    }
+    // return false;
 }
 
 static bool handle_private(struct http_transaction *ta)
