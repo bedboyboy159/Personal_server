@@ -385,6 +385,7 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
 
     ta->resp_status = HTTP_OK;
     http_add_header(&ta->resp_headers, "Content-Type", "%s", guess_mime_type(fname));
+    http_add_header(&ta->resp_headers, "Accept-Ranges", "%s", "bytes");
     off_t from = 0, to = st.st_size - 1;
 
     off_t content_length = to + 1 - from;
