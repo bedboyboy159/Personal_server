@@ -301,7 +301,6 @@ static bool
 send_not_found(struct http_transaction *ta)
 {
     // edit here and give back index.html
-
     return send_error(ta, HTTP_NOT_FOUND, "File %s not found",
                       bufio_offset2ptr(ta->client->bufio, ta->req_path));
 }
@@ -392,9 +391,9 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     http_add_header(&ta->resp_headers, "Content-Type", "%s", guess_mime_type(fname));
     http_add_header(&ta->resp_headers, "Accept-Ranges", "%s", "bytes");
 
-    off_t from = 0, to = st.st_size - 1;
+    // off_t from = 0, to = st.st_size - 1;
 
-    off_t content_length = to + 1 - from;
+    // off_t content_length = to + 1 - from;
 
     // check if range is given in header
     if (strlen(ta->range_str) != 0)
@@ -405,7 +404,7 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
 
         int range_clean_length = (int)strlen(range_clean) - 1;
 
-        printf("%s %d", range_clean, range_clean_length);
+        // printf("%s %d", range_clean, range_clean_length);
         char *first;
         char *second = NULL;
 
@@ -416,24 +415,28 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
             second = strtok(NULL, "-");
             // printf("%s", second);
         }
-        if (second == NULL)
+
+        // first and second are strings
+        ta->range_from = (off_t)atoi(first);
+        ta->range_to = st.st_size - 1;
+
+        if (second != NULL)
         {
-            // printf("%s", second);
-            from = atoi(first);
-            off_t c_len = to + 1 - from;
-            http_add_header(&ta->resp_headers, "Content-Range", "bytes %s-%d/%d", (int)from, (int)to, (int)c_len);
-            ta->resp_status = HTTP_PARTIAL_CONTENT;
+            ta->range_to = (off_t)atoi(second);
         }
-        else
-        {
-            from = atoi(first);
-            to = atoi(second);
-            off_t c_len = to + 1 - from;
-            http_add_header(&ta->resp_headers, "Content-Range", "bytes %s-%s/%d", first, second, (int)c_len);
-            ta->resp_status = HTTP_PARTIAL_CONTENT;
-        }
+        http_add_header(&ta->resp_headers, "Content-Range", "bytes %ld-%ld/%ld", ta->range_from, ta->range_to, st.st_size);
+        // http_add_header(&ta->resp_headers, "Content-Range", "bytes %s-%s/%d", first, second, (int)content_length);
+        ta->resp_status = HTTP_PARTIAL_CONTENT;
     }
+    else
+    {
+        ta->resp_status = HTTP_OK;
+        ta->range_from = 0;
+        ta->range_to = st.st_size - 1;
+    }
+
     // if yes then parse and add to header w Content-Range
+    off_t content_length = (ta->range_to + 1) - ta->range_from;
 
     add_content_length(&ta->resp_headers, content_length);
 
@@ -442,8 +445,8 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
         goto out;
 
     // sendfile may send fewer bytes than requested, hence the loop
-    while (success && from <= to)
-        success = bufio_sendfile(ta->client->bufio, filefd, &from, to + 1 - from) > 0;
+    while (success && ta->range_from <= ta->range_to)
+        success = bufio_sendfile(ta->client->bufio, filefd, &ta->range_from, &ta->range_to + 1 - &ta->range_from) > 0;
 
 out:
     close(filefd);
@@ -651,7 +654,7 @@ struct rc_and_ver http_handle_transaction(struct http_client *self)
     memset(&ta, 0, sizeof ta);
 
     memset(&ta.cookie, 0, 300);
-    memset(&ta.range_str, 0, 200);
+    memset(&ta.range_str, 0, 256);
 
     ta.client = self;
 
