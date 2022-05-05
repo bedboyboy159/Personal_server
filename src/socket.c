@@ -1,7 +1,7 @@
 /*
  * Support functions for dealing with sockets.
  *
- * Note: these functions cannot be used out of the box. 
+ * Note: these functions cannot be used out of the box.
  * In particular, support for protocol independent programming
  * is not fully implemented.  See below.
  *
@@ -30,13 +30,12 @@
  * invoke listen to get the socket ready for accepting clients.
  *
  * This function does not implement proper support for protocol-independent/
- * dual-stack binding.  Adding this is part of the assignment. 
+ * dual-stack binding.  Adding this is part of the assignment.
  *
  * Returns -1 on error, setting errno.
  * Returns socket file descriptor otherwise.
  */
-int 
-socket_open_bind_listen(char * port_number_string, int backlog)
+int socket_open_bind_listen(char *port_number_string, int backlog)
 {
     struct addrinfo *info, *pinfo;
     struct addrinfo hint;
@@ -48,53 +47,115 @@ socket_open_bind_listen(char * port_number_string, int backlog)
 
     hint.ai_protocol = IPPROTO_TCP; // only interested in TCP
     int rc = getaddrinfo(NULL, port_number_string, &hint, &info);
-    if (rc != 0) {
+    if (rc != 0)
+    {
         fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(rc));
         return -1;
     }
 
     char printed_addr[1024];
-    for (pinfo = info; pinfo; pinfo = pinfo->ai_next) {
-        assert (pinfo->ai_protocol == IPPROTO_TCP);
+    for (pinfo = info; pinfo; pinfo = pinfo->ai_next)
+    {
+        assert(pinfo->ai_protocol == IPPROTO_TCP);
         int rc = getnameinfo(pinfo->ai_addr, pinfo->ai_addrlen,
                              printed_addr, sizeof printed_addr, NULL, 0,
                              NI_NUMERICHOST);
-        if (rc != 0) {
+        if (rc != 0)
+        {
             fprintf(stderr, "getnameinfo error: %s\n", gai_strerror(rc));
             return -1;
         }
 
         /* Uncomment this to see the address returned
         printf("%s: %s\n", pinfo->ai_family == AF_INET ? "AF_INET" :
-                           pinfo->ai_family == AF_INET6 ? "AF_INET6" : "?", 
+                           pinfo->ai_family == AF_INET6 ? "AF_INET6" : "?",
                            printed_addr);
         */
 
-        /* Skip any non-IPv4 addresses.  
+        /* Skip any non-IPv4 addresses.
          * Adding support for protocol independence/IPv6 is part of the project.
          */
-        if (pinfo->ai_family != AF_INET)
+        // change something here to get IPv6 support working.
+        if (pinfo->ai_family != AF_INET6)
             continue;
 
         int s = socket(pinfo->ai_family, pinfo->ai_socktype, pinfo->ai_protocol);
-        if (s == -1) {
+        if (s == -1)
+        {
             perror("socket");
             return -1;
         }
 
         // See https://stackoverflow.com/a/3233022 for a good explanation of what this does
         int opt = 1;
-        setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof (opt));
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
         rc = bind(s, pinfo->ai_addr, pinfo->ai_addrlen);
-        if (rc == -1) {
+        if (rc == -1)
+        {
             perror("bind");
             close(s);
             return -1;
         }
 
         rc = listen(s, backlog);
-        if (rc == -1) {
+        if (rc == -1)
+        {
+            perror("listen");
+            close(s);
+            return -1;
+        }
+
+        freeaddrinfo(info);
+        return s;
+    }
+
+    for (pinfo = info; pinfo; pinfo = pinfo->ai_next)
+    {
+        assert(pinfo->ai_protocol == IPPROTO_TCP);
+        int rc = getnameinfo(pinfo->ai_addr, pinfo->ai_addrlen,
+                             printed_addr, sizeof printed_addr, NULL, 0,
+                             NI_NUMERICHOST);
+        if (rc != 0)
+        {
+            fprintf(stderr, "getnameinfo error: %s\n", gai_strerror(rc));
+            return -1;
+        }
+
+        /* Uncomment this to see the address returned
+        printf("%s: %s\n", pinfo->ai_family == AF_INET ? "AF_INET" :
+                           pinfo->ai_family == AF_INET6 ? "AF_INET6" : "?",
+                           printed_addr);
+        */
+
+        /* Skip any non-IPv4 addresses.
+         * Adding support for protocol independence/IPv6 is part of the project.
+         */
+        if (pinfo->ai_family != AF_INET)
+            continue;
+
+        int s = socket(pinfo->ai_family, pinfo->ai_socktype, pinfo->ai_protocol);
+        if (s == -1)
+        {
+            perror("socket");
+            return -1;
+        }
+
+        // See https://stackoverflow.com/a/3233022 for a good explanation of what this does
+        int opt = 1;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+        rc = bind(s, pinfo->ai_addr, pinfo->ai_addrlen);
+        if (rc == -1)
+        {
+            perror("bind");
+            close(s);
+            return -1;
+        }
+
+        rc = listen(s, backlog);
+        if (rc == -1)
+        {
             perror("listen");
             close(s);
             return -1;
@@ -113,8 +174,7 @@ socket_open_bind_listen(char * port_number_string, int backlog)
  * Returns file descriptor of client accepted on success, returns
  * -1 on error.
  */
-int 
-socket_accept_client(int accepting_socket)
+int socket_accept_client(int accepting_socket)
 {
     /* The address passed into accept must be large enough for either IPv4 & IPv6.
      * Using a struct sockaddr is too small to hold a full IPv6 address and accept()
@@ -123,8 +183,9 @@ socket_accept_client(int accepting_socket)
     struct sockaddr_storage peer;
     socklen_t peersize = sizeof(peer);
 
-    int client = accept(accepting_socket, (struct sockaddr *) &peer, &peersize);
-    if (client == -1) {
+    int client = accept(accepting_socket, (struct sockaddr *)&peer, &peersize);
+    if (client == -1)
+    {
         perror("accept");
         return -1;
     }
@@ -141,12 +202,14 @@ socket_accept_client(int accepting_socket)
     /* The following will help with debugging your server.
      * Adjust and/or remove as you see fit.
      */
-    if (!silent_mode) {
+    if (!silent_mode)
+    {
         char peer_addr[1024], peer_port[10];
-        int rc = getnameinfo((struct sockaddr *) &peer, peersize,
+        int rc = getnameinfo((struct sockaddr *)&peer, peersize,
                              peer_addr, sizeof peer_addr, peer_port, sizeof peer_port,
                              NI_NUMERICHOST | NI_NUMERICSERV);
-        if (rc != 0) {
+        if (rc != 0)
+        {
             fprintf(stderr, "getnameinfo error: %s\n", gai_strerror(rc));
             return -1;
         }
@@ -154,4 +217,3 @@ socket_accept_client(int accepting_socket)
     }
     return client;
 }
-
