@@ -40,6 +40,7 @@
 #include <linux/limits.h>
 
 #include <jwt.h>
+#include <dirent.h>
 
 #include "http.h"
 #include "hexdump.h"
@@ -407,11 +408,42 @@ static bool handle_api_video(struct http_transaction *ta)
     // list out videos in json format
     if (ta->req_method == HTTP_GET)
     {
+        char fileName[PATH_MAX];
+        DIR *dir;
+        dir = opendir(server_root);
+        struct dirent *file;
+        json_t *array = json_array();
+        while ((file = readdir(dir)) != NULL)
+        {
+            char *mp4 = strchr(file->d_name, '.');
+            if (mp4 != NULL)
+            {
+                if (strstr(mp4, ".mp4") != NULL)
+                {
+                    snprintf(fileName, sizeof(fileName), "%s/%s", server_root, file->d_name);
+                    struct stat val;
+                    stat(fileName, &val);
+                    json_t *vid_object = json_object();
+                    int size = json_object_set_new(vid_object, "size", json_integer(val.st_size));
+                    int name = json_object_set_new(vid_object, "name", json_string(file->d_name));
+                    int appended = json_array_append(array, vid_object);
 
-        // return json object
-        // json object should be a list of videos that can be served
+                    printf("useless: %d, %d, %d", size, name, appended);
+
+                    // printf("useful: %s", ret_string);
+                }
+            }
+        }
+        closedir(dir);
+        char *ret_string = json_dumps(array, 0);
+        http_add_header(&ta->resp_headers, "Content-Type", "application/json");
+        buffer_append(&ta->resp_body, ret_string, strlen(ret_string));
+        free(ret_string);
+        ta->resp_status = HTTP_OK;
+        return send_response(ta);
     }
-    // return false;
+    ta->resp_status = HTTP_OK;
+    return send_response(ta);
 }
 
 static bool handle_private(struct http_transaction *ta)
