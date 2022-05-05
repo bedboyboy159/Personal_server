@@ -701,7 +701,7 @@ struct rc_and_ver http_handle_transaction(struct http_client *self)
     {
         rc = send_error(&ta, HTTP_NOT_FOUND, "Not found");
     }
-    if (STARTS_WITH(req_path, "/api/login"))
+    if (strcmp(req_path, "/api/login") == 0)
     {
         if (ta.req_method == HTTP_GET)
         {
