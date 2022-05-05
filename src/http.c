@@ -138,6 +138,11 @@ http_process_headers(struct http_transaction *ta)
             ta->req_content_len = atoi(field_value);
         }
 
+        if (!strcasecmp(field_name, "Range"))
+        {
+            snprintf(ta->range_str, 100, "%s", field_value);
+        }
+
         /* Handle other headers here. Both field_value and field_name
          * are zero-terminated strings.
          */
@@ -386,9 +391,50 @@ handle_static_asset(struct http_transaction *ta, char *basedir)
     ta->resp_status = HTTP_OK;
     http_add_header(&ta->resp_headers, "Content-Type", "%s", guess_mime_type(fname));
     http_add_header(&ta->resp_headers, "Accept-Ranges", "%s", "bytes");
+
     off_t from = 0, to = st.st_size - 1;
 
     off_t content_length = to + 1 - from;
+
+    // check if range is given in header
+    if (strlen(ta->range_str) != 0)
+    {
+        // printf("y");
+        // parse range
+        char *range_clean = strchr(ta->range_str, '=') + 1; // either XXX- OR XXX-YYY
+
+        int range_clean_length = (int)strlen(range_clean) - 1;
+
+        printf("%s %d", range_clean, range_clean_length);
+        char *first;
+        char *second = NULL;
+
+        first = strtok(range_clean, "-");
+        // printf("%s%s", range_clean, first);
+        if (strlen(first) < range_clean_length)
+        {
+            second = strtok(NULL, "-");
+            // printf("%s", second);
+        }
+        if (second == NULL)
+        {
+            // printf("%s", second);
+            from = atoi(first);
+            off_t c_len = to + 1 - from;
+            http_add_header(&ta->resp_headers, "Content-Range", "bytes %s-%d/%d", (int)from, (int)to, (int)c_len);
+            ta->resp_status = HTTP_PARTIAL_CONTENT;
+        }
+        else
+        {
+            from = atoi(first);
+            to = atoi(second);
+            off_t c_len = to + 1 - from;
+            http_add_header(&ta->resp_headers, "Content-Range", "bytes %s-%s/%d", first, second, (int)c_len);
+            ta->resp_status = HTTP_PARTIAL_CONTENT;
+        }
+    }
+    // if yes then parse and add to header w Content-Range
+
     add_content_length(&ta->resp_headers, content_length);
 
     bool success = send_response_header(ta);
@@ -605,9 +651,11 @@ struct rc_and_ver http_handle_transaction(struct http_client *self)
     memset(&ta, 0, sizeof ta);
 
     memset(&ta.cookie, 0, 300);
+    memset(&ta.range_str, 0, 200);
 
     ta.client = self;
 
+    // times out here
     if (!http_parse_request(&ta))
     {
         struct rc_and_ver return_stuff;

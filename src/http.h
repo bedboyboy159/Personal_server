@@ -58,6 +58,7 @@ struct http_transaction
     struct http_client *client;
 
     char cookie[300];
+    char range_str[200];
 };
 
 struct http_client
