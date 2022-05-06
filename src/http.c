@@ -1,3 +1,23 @@
+/*  
+Project 4 - ANSHGWASH and LONGH220
+
+    Describe: This project focused on implementing a personal web server that support login, sign out, 
+    user authentication, mp4 streaming, html5 fallback and Ipv6 support. It allow multiple users sign in at the
+    same time. Verifying the user to see private files and support fallback when entered the wrong URL.
+
+    Implementation:
+    We implemeted(edit) the function handle_api to handle post and get request, later we also added in
+    a part to handle video streaming.
+    We also added a part to check for whether user is allowed to access the private authentication based
+    on their cookie once they signed in.
+    We also implemented html5 fallback in handle_Static_asset when the user entered wrong URL
+    We also implemented IPV6 support in the socket.c by creating another for loop for it.
+    We also implemented multi threading to support multiple user at once in main.c
+
+    Lastly, for the authentication and edge cases to work, we had to work with the test cases to fix 
+    edge cases so that our program would fully functional and pass every single test case.
+
+*/
 /*
  * A partial implementation of HTTP/1.0
  *
@@ -138,8 +158,9 @@ http_process_headers(struct http_transaction *ta)
                 if (strstr(lhs, "auth_token") != NULL)
                 {
                     char *in_rhs;
-                    char *in_lhs = strtok_r(lhs, "=", &in_rhs);
-                    printf("%s", in_lhs);
+                    // char *in_lhs = strtok_r(lhs, "=", &in_rhs);
+                    strtok_r(lhs, "=", &in_rhs);
+                    // printf("%s", in_lhs);
                     snprintf(ta->cookie, 300, "%s", in_rhs);
                     break;
                 }
@@ -463,11 +484,12 @@ static bool handle_api_video(struct http_transaction *ta)
                     struct stat val;
                     stat(fileName, &val);
                     json_t *vid_object = json_object();
-                    int size = json_object_set_new(vid_object, "size", json_integer(val.st_size));
-                    int name = json_object_set_new(vid_object, "name", json_string(file->d_name));
-                    int appended = json_array_append(array, vid_object);
+                    json_object_set_new(vid_object, "size", json_integer(val.st_size));
+                    json_object_set_new(vid_object, "name", json_string(file->d_name));
+                    json_array_append(array, vid_object);
 
-                    printf("useless: %d, %d, %d", size, name, appended);
+
+                    // printf("useless: %d, %d, %d", size, name, appended);
 
                     // printf("useful: %s", ret_string);
                 }
@@ -721,7 +743,7 @@ struct rc_and_ver http_handle_transaction(struct http_client *self)
     else if (STARTS_WITH(req_path, "/private"))
     {
         // not implemented
-        if (ta.cookie == NULL)
+        if (strlen(ta.cookie) == 0)
         {
             rc = send_error(&ta, HTTP_PERMISSION_DENIED, "NULL COOKIE");
         }
