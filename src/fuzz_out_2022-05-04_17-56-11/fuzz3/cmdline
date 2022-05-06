@@ -1,0 +1,5 @@
+/home/ugrads/majors/longh220/System/Project4/pserv/src/server-fuzz
+-p
+49663
+-R
+/home/ugrads/majors/longh220/System/Project4/pserv/src/fuzz_root

@@ -1,0 +1,41 @@
+start_time        : 1651705055
+last_update       : 1651709331
+run_time          : 4275
+fuzzer_pid        : 1302382
+cycles_done       : 0
+cycles_wo_finds   : 0
+execs_done        : 912776
+execs_per_sec     : 213.47
+execs_ps_last_min : 57.04
+paths_total       : 525
+paths_favored     : 115
+paths_found       : 102
+paths_imported    : 57
+max_depth         : 3
+cur_path          : 465
+pending_favs      : 42
+pending_total     : 254
+variable_paths    : 4
+stability         : 97.96%
+bitmap_cvg        : 35.56%
+unique_crashes    : 0
+unique_hangs      : 0
+last_path         : 1651707591
+last_crash        : 0
+last_hang         : 0
+execs_since_crash : 912776
+exec_timeout      : 60
+slowest_exec_ms   : 0
+peak_rss_mb       : 0
+cpu_affinity      : 3
+edges_found       : 638
+total_edges       : 1794
+var_byte_count    : 13
+havoc_expansion   : 0
+testcache_size    : 10729744
+testcache_count   : 525
+testcache_evict   : 0
+afl_banner        : pserv [fuzzing on 4 core(s)]
+afl_version       : ++3.15a
+target_mode       : shmem_testcase default
+command_line      : /home/courses/cs3214/bin/sfi/AFLplusplus/afl-fuzz -i /home/courses/cs3214/bin/sfi/comux_inputs -o ./fuzz_out_2022-05-04_18-57-20 -V 5400.0 -M fuzz0 -T pserv [fuzzing on 4 core(s)] /home/ugrads/majors/longh220/System/Project4/pserv/src/server-fuzz -p 53071 -R /home/ugrads/majors/longh220/System/Project4/pserv/src/fuzz_root

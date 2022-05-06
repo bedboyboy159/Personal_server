@@ -1,0 +1,10 @@
+# environment variables:
+AFL_BENCH_UNTIL_CRASH=1
+AFL_CUSTOM_MUTATOR_LIBRARY=/home/courses/cs3214/bin/sfi/gurthang/gurthang-mutator.so
+AFL_CUSTOM_MUTATOR_ONLY=1
+AFL_HANG_TMOUT=2000
+AFL_FORKSRV_INIT_TMOUT=10000
+AFL_KILL_SIGNAL=9
+AFL_PRELOAD=/home/courses/cs3214/bin/sfi/gurthang/gurthang-preload.so
+# command line:
+'/home/courses/cs3214/bin/sfi/AFLplusplus/afl-fuzz' '-i' '/home/courses/cs3214/bin/sfi/comux_inputs' '-o' './fuzz_out_2022-05-04_18-57-20' '-V' '5400.0' '-S' 'fuzz1' '/home/ugrads/majors/longh220/System/Project4/pserv/src/server-fuzz' '-p' '55463' '-R' '/home/ugrads/majors/longh220/System/Project4/pserv/src/fuzz_root'
