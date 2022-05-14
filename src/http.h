@@ -48,6 +48,10 @@ struct http_transaction {
     buffer_t resp_headers;
     buffer_t resp_body;
     bool verify;
+    bool partial;
+    int begin;
+    int end;
+    char* type;
     struct http_client *client;
 };
 
